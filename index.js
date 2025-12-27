@@ -170,7 +170,103 @@ async function run() {
             res.send(result);
         })
 
+        // parcel api
+        app.get('/parcels', async (req, res) => {
+            const query = {}
+            const { email, deliveryStatus } = req.query;
 
+            // /parcels?email=''&
+            if (email) {
+                query.senderEmail = email;
+            }
+
+            if (deliveryStatus) {
+                query.deliveryStatus = deliveryStatus
+            }
+
+            const options = { sort: { createdAt: -1 } }
+
+            const cursor = parcelsCollection.find(query, options);
+            const result = await cursor.toArray();
+            res.send(result);
+        })
+
+        app.get('/parcels/rider', async (req, res) => {
+            const { riderEmail, deliveryStatus } = req.query;
+            const query = {}
+
+            if (riderEmail) {
+                query.riderEmail = riderEmail
+            }
+            if (deliveryStatus !== 'parcel_delivered') {
+                // query.deliveryStatus = {$in: ['driver_assigned', 'rider_arriving']}
+                query.deliveryStatus = { $nin: ['parcel_delivered'] }
+            }
+            else {
+                query.deliveryStatus = deliveryStatus;
+            }
+
+            const cursor = parcelsCollection.find(query)
+            const result = await cursor.toArray();
+            res.send(result);
+        })
+
+        app.get('/parcels/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await parcelsCollection.findOne(query);
+            res.send(result);
+        })
+
+        app.get('/parcels/delivery-status/stats', async (req, res) => {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: '$deliveryStatus',
+                        count: { $sum: 1 }
+                    }
+                },
+                {
+                    $project: {
+                        status: '$_id',
+                        count: 1,
+                        // _id: 0
+                    }
+                }
+            ]
+            const result = await parcelsCollection.aggregate(pipeline).toArray();
+            res.send(result);
+        })
+
+        app.post('/parcels', async (req, res) => {
+            const parcel = req.body;
+            const trackingId = generateTrackingId();
+            // parcel created time
+            parcel.createdAt = new Date();
+            parcel.trackingId = trackingId;
+
+            logTracking(trackingId, 'parcel_created');
+
+            const result = await parcelsCollection.insertOne(parcel);
+            res.send(result)
+        })
+
+        // TODO: rename this to be specific like /parcels/:id/assign
+        app.patch('/parcels/:id', async (req, res) => {
+            const { riderId, riderName, riderEmail, trackingId } = req.body;
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+
+            const updatedDoc = {
+                $set: {
+                    deliveryStatus: 'driver_assigned',
+                    riderId: riderId,
+                    riderName: riderName,
+                    riderEmail: riderEmail
+                }
+            }
+
+            const result = await parcelsCollection.updateOne(query, updatedDoc)
 
             // update rider information
             const riderQuery = { _id: new ObjectId(riderId) }
