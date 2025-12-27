@@ -63,6 +63,87 @@ const client = new MongoClient(uri, {
 });
 
 
+async function run() {
+    try {
+        // Connect the client to the server	(optional starting in v4.7)
+        await client.connect();
+
+        const db = client.db('zap_shift_db');
+        const userCollection = db.collection('users');
+        const parcelsCollection = db.collection('parcels');
+        const paymentCollection = db.collection('payments');
+        const ridersCollection = db.collection('riders');
+        const trackingsCollection = db.collection('trackings');
+
+        // middle admin before allowing admin activity
+        // must be used after verifyFBToken middleware
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await userCollection.findOne(query);
+
+            if (!user || user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+        const verifyRider = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await userCollection.findOne(query);
+
+            if (!user || user.role !== 'rider') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+
+        const logTracking = async (trackingId, status) => {
+            const log = {
+                trackingId,
+                status,
+                details: status.split('_').join(' '),
+                createdAt: new Date()
+            }
+            const result = await trackingsCollection.insertOne(log);
+            return result;
+        }
+
+
+
+        // old
+        // app.post('/create-checkout-session', async (req, res) => {
+        //     const paymentInfo = req.body;
+        //     const amount = parseInt(paymentInfo.cost) * 100;
+
+        //     const session = await stripe.checkout.sessions.create({
+        //         line_items: [
+        //             {
+        //                 price_data: {
+        //                     currency: 'USD',
+        //                     unit_amount: amount,
+        //                     product_data: {
+        //                         name: paymentInfo.parcelName
+        //                     }
+        //                 },
+        //                 quantity: 1,
+        //             },
+        //         ],
+        //         customer_email: paymentInfo.senderEmail,
+        //         mode: 'payment',
+        //         metadata: {
+        //             parcelId: paymentInfo.parcelId,
+        //             parcelName: paymentInfo.parcelName
+        //         },
+        //         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+        //         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+        //     })
+
+        //     console.log(session)
+        //     res.send({ url: session.url })
+        // })
 
         app.patch('/payment-success', async (req, res) => {
             const sessionId = req.query.session_id;
