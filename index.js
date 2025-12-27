@@ -111,6 +111,80 @@ async function run() {
             return result;
         }
 
+      
+            // log  tracking
+            logTracking(trackingId, 'driver_assigned')
+
+            res.send(riderResult);
+
+        })
+
+        app.patch('/parcels/:id/status', async (req, res) => {
+            const { deliveryStatus, riderId, trackingId } = req.body;
+
+            const query = { _id: new ObjectId(req.params.id) }
+            const updatedDoc = {
+                $set: {
+                    deliveryStatus: deliveryStatus
+                }
+            }
+
+            if (deliveryStatus === 'parcel_delivered') {
+                // update rider information
+                const riderQuery = { _id: new ObjectId(riderId) }
+                const riderUpdatedDoc = {
+                    $set: {
+                        workStatus: 'available'
+                    }
+                }
+                const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdatedDoc);
+            }
+
+            const result = await parcelsCollection.updateOne(query, updatedDoc)
+            // log tracking
+            logTracking(trackingId, deliveryStatus);
+
+            res.send(result);
+        })
+
+        app.delete('/parcels/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+
+            const result = await parcelsCollection.deleteOne(query);
+            res.send(result);
+        })
+
+
+        // payment related apis
+        app.post('/payment-checkout-session', async (req, res) => {
+            const parcelInfo = req.body;
+            const amount = parseInt(parcelInfo.cost) * 100;
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'usd',
+                            unit_amount: amount,
+                            product_data: {
+                                name: `Please pay for: ${parcelInfo.parcelName}`
+                            }
+                        },
+                        quantity: 1,
+                    },
+                ],
+                mode: 'payment',
+                metadata: {
+                    parcelId: parcelInfo.parcelId,
+                    trackingId: parcelInfo.trackingId
+                },
+                customer_email: parcelInfo.senderEmail,
+                success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+            })
+
+            res.send({ url: session.url })
+        })
 
 
         // old
